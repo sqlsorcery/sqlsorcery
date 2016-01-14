@@ -6,7 +6,15 @@ import kotlin.collections.*
 import kotlin.reflect.KProperty
 import kotlin.text.*
 
-class Column<T>(val type: Type<T>) {
+abstract class Identifier
+
+class ValueIdentifier<V>(val type: Type<V>, val value: V) : Identifier() {
+    override fun toString(): String {
+        return "?"
+    }
+}
+
+class Column<T>(val type: Type<T>) : Identifier() {
     val aliasedName: String
         get() = fullQuallfiedName.replace(".", "_")
     val fullQuallfiedName: String
@@ -21,45 +29,71 @@ class Column<T>(val type: Type<T>) {
         throw UnsupportedOperationException("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
 
-    infix fun eq(t: T): Condition {
-        throw UnsupportedOperationException("not implemented") //To change body of created functions use File | Settings | File Templates.
+    infix fun eq(other: T): Condition {
+        return EqualCondition(this, ValueIdentifier(type, other))
     }
 
     internal fun init(name: String, modelTable: ModelTable<*>) {
         _name = name
         _modelTable = modelTable
     }
+
+    override fun toString(): String {
+        return aliasedName
+    }
 }
 
-abstract class Condition
+abstract class Condition : Identifier()
 
-abstract class Query(vararg val fields: ModelTable<*>) {
-    private val where = arrayListOf<Condition>()
+abstract class BinaryCondition(private val left: Identifier, private val right: Identifier, private val operator: String) : Condition() {
+    override fun toString(): String {
+        return "$left $operator $right"
+    }
+}
+
+class EqualCondition(left: Identifier, right: Identifier) : BinaryCondition(left, right, "=")
+
+abstract class Query<T : Query.Result>(vararg val fields: ModelTable<*>) {
+    private val conditions = arrayListOf<Condition>()
 
     internal fun addConditions(conditions: List<Condition>) {
-        where.addAll(conditions)
+        this.conditions.addAll(conditions)
     }
 
     override fun toString(): String {
         val selectFields = fields.flatMap { it.meta.fields.values }.map { "${it.fullQuallfiedName} AS ${it.aliasedName}" }
-        return "SELECT ${selectFields.joinToString(", ")} FROM ${fields.first().meta.name}"
+        return "SELECT ${selectFields.joinToString(", ")} FROM ${fields.first().meta.name} WHERE ${conditions.map { it.toString() }.joinToString(" AND ")}"
+    }
+
+    fun all(): List<T> {
+        return listOf<T>().map { mapResult(listOf<Any?>()) }
+    }
+
+    fun one(): T {
+        return mapResult(listOf<Any?>())
+    }
+
+    abstract protected fun mapResult(items: List<*>): T
+
+    abstract class Result(protected val items: List<*>)
+}
+
+class Query1<M : Model?>(field: ModelTable<M>) : Query<Query1.Result1<M>>(field) {
+    override protected fun mapResult(items: List<*>) = Result1<M>(items)
+
+    class Result1<T1>(items: List<*>) : Result(items) {
+        @Suppress("UNCHECKED_CAST")
+        operator fun component1() = items[0] as T1
     }
 }
 
-class Query1<M : Model>(field: ModelTable<M>) : Query(field) {
-    fun one(): M {
-        throw UnsupportedOperationException("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-}
 
-
-fun <Q : Query> Q.filter(vararg conditions: Condition): Q {
+fun <Q : Query<*>> Q.filter(vararg conditions: Condition): Q {
     addConditions(conditions.toList())
-    throw UnsupportedOperationException("not impeemented") //To change body of created functions use File | Settings | File Templates.
     return this
 }
 
-abstract class ModelTable<M : Model> {
+abstract class ModelTable<M : Model?> {
     val query: Query1<M>
         get() = Query1(this)
 
@@ -85,6 +119,11 @@ class Meta(val modelTable: ModelTable<*>) {
     val name = modelTable.javaClass.name.split(".").last().split("$").first().toLowerCase()
 }
 
+fun <M : Model> nullable(field: ModelTable<M>): ModelTable<M?> {
+    @Suppress("CAST_NEVER_SUCCEEDS")
+    return field as ModelTable<M?>
+}
+
 abstract class Model
 
 abstract class Type<T>
@@ -97,17 +136,20 @@ class User : Model() {
         val id = Column(INTEGER())
     }
 
-    val id: Int by User.id
+    val id by User.id
 }
 
 
 class QueryTest {
     @Test
     fun testQuery() {
-        Assert.assertEquals("SELECT user.id AS user_id FROM user", User.query.toString())
-
-        //        val user = User.query.filter(User.id eq 1).one()
-        //        Assert.assertEquals(1, user.id)
+        Assert.assertEquals(
+                "SELECT user.id AS user_id FROM user WHERE user_id = ?",
+                User.query.filter(User.id eq 1).toString()
+        )
+        val (user: User) = User.query.filter(User.id eq 1).one()
+        val (user1: User?) = Query1(nullable(User)).one()
+        //                Assert.assertEquals(1, user.id)
     }
 }
 
