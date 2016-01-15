@@ -2,6 +2,7 @@ package com.sqlsorcery
 
 import com.sqlsorcery.types.Type
 import kotlin.collections.listOf
+import kotlin.collections.set
 import kotlin.reflect.KProperty
 import kotlin.text.replace
 
@@ -45,11 +46,15 @@ class Column<T>(val type: Type<T>) : Identifier(), Selectable<T> {
         override val fullQualifiedName: String
             get() = column.fullQualifiedName
 
-        override fun map(func: () -> Any?): Any? {
+        override fun map(session: Session, func: () -> Any?): Any? {
             return column.type.decode(func())
         }
 
         override val flatten: List<Selectable<*>> = listOf(column)
         override val table: Table? get() = column.modelTable.meta
+    }
+
+    operator fun setValue(model: Model, property: KProperty<*>, t: T) {
+        model.meta.map[name] = t
     }
 }

@@ -24,7 +24,7 @@ open class Query<R : ResultSet>(vararg selectableList: Selectable<*>) {
                 var index = 0
                 val result = arrayListOf<Any?>()
                 selected.forEach {
-                    result.add(it.meta.map { getObject(++index) })
+                    result.add(it.meta.map(session) { getObject(++index) })
                 }
                 results.add(buildResult(result))
             }

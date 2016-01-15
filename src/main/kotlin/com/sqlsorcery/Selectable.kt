@@ -14,6 +14,6 @@ interface Selectable<T> {
         val table: Table?
             get() = null
 
-        fun map(func: () -> Any?): Any?
+        fun map(session: Session, func: () -> Any?): Any?
     }
 }

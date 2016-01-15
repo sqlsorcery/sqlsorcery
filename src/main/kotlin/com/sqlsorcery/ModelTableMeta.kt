@@ -7,14 +7,22 @@ import kotlin.text.substring
 import kotlin.text.toLowerCase
 
 class ModelTableMeta<M : Model>(val modelTable: ModelTable<M>, private val modelConstructor: () -> M) : Selectable.Meta, Table {
-    override val aliasedName: String get() = fullQualifiedName
+    lateinit var primaryKeys: Array<Column<*>>
 
+    override val aliasedName: String get() = fullQualifiedName
     override val fullQualifiedName: String = modelTable.javaClass.name.extractTargetClassName().toLowerCase()
 
-    override fun map(func: () -> Any?): Any? {
+    override fun map(session: Session, func: () -> Any?): Any? {
         val model = modelConstructor()
+        model.meta.tableMeta = this
         fields.values.forEach {
             model.meta.map.put(it.name, it.type.decode(func()))
+        }
+        if (model.meta.id != 0) {
+            if (model.meta.id in session.identityMap) {
+                return session.identityMap[model.meta.id]
+            }
+            session.identityMap[model.meta.id] = model
         }
         return model
     }
